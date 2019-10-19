@@ -6,33 +6,63 @@ import (
 	"io"
 )
 
-// Encoding represents the BOM encoding.
-type Encoding struct {
-	// Name is the name of BOM encoding.
-	Name string
-	// Data contains BOM bytes.
-	Data []byte
+// Encoding is interface type represents BOM encoding.
+// String() implements the fmt.Stringer interface.
+// Bytes() will output the bytes of BOM.
+type Encoding interface {
+	String() string
+	Bytes() []byte
+}
+
+// encoding is a trivial implmentation of Encoding.
+type encoding struct {
+	name string
+	hex  string
+}
+
+// String is the implementation for fmt.Stringer interface.
+// It will return the name of BOM encoding.
+func (enc *encoding) String() string {
+	return enc.name
+}
+
+// Bytes returns the bytes of BOM.
+func (enc *encoding) Bytes() []byte {
+	return []byte(enc.hex)
 }
 
 var (
-	// Encodings represent the unicode BOM Encodings.
-	Encodings = []Encoding{
-		Encoding{"UTF-32,big-endian", []byte{0x00, 0x00, 0xFE, 0xFF}},
-		Encoding{"UTF-32,little-endian", []byte{0xFF, 0xFE, 0x00, 0x00}},
-		Encoding{"UTF-8", []byte{0xEF, 0xBB, 0xBF}},
-		Encoding{"UTF-16,big-endian", []byte{0xFE, 0xFF}},
-		Encoding{"UTF-16,little-endian", []byte{0xFF, 0xFE}},
+	// UTF32BE is the BOM of UTF-32, big-endian.
+	UTF32BE = &encoding{"UTF-32, big-endian", "\x00\x00\xFE\xFF"}
+	// UTF32LE is the BOM of UTF-32,little-endian.
+	UTF32LE = &encoding{"UTF-32, little-endian", "\xFF\xFE\x00\x00"}
+	// UTF8 is the BOM of UTF-8.
+	UTF8 = &encoding{"UTF-8", "\xEF\xBB\xBF"}
+	// UTF16BE is the BOM of UTF-16,big-endian.
+	UTF16BE = &encoding{"UTF-16, big-endian", "\xFE\xFF"}
+	// UTF16LE is the BOM of UTF-16,little-endian.
+	UTF16LE = &encoding{"UTF-16, little-endian", "\xFF\xFE"}
+	// NoBOM is the default BOM if no BOM is detected.
+	NoBOM = &encoding{"No BOM", ""}
+
+	encodings = []*encoding{
+		UTF32BE,
+		UTF32LE,
+		UTF8,
+		UTF16BE,
+		UTF16LE,
+		NoBOM,
 	}
 )
 
 // DetectEncoding detects the BOM encoding by given buffer.
 func DetectEncoding(buf []byte) Encoding {
-	for _, enc := range Encodings {
-		if bytes.HasPrefix(buf, enc.Data) {
+	for _, enc := range encodings {
+		if bytes.HasPrefix(buf, enc.Bytes()) {
 			return enc
 		}
 	}
-	return Encoding{"Unkown", []byte{}}
+	return NoBOM
 }
 
 // Skip tries to detect BOM in original reader and return a new bufio.Reader with BOM skipped.
@@ -46,26 +76,25 @@ func Skip(r io.Reader) (Encoding, *bufio.Reader, error) {
 
 		if err != nil {
 			if err != io.EOF {
-				return Encoding{"Unkown", []byte{}}, reader, err
+				return NoBOM, reader, err
 			}
 			// err == EOF, try to Peek(i - 1) again.
 			continue
 		}
 
-		encoding := DetectEncoding(buf)
+		enc := DetectEncoding(buf)
 		// No BOM detected.
-		l := len(encoding.Data)
-		if l <= 0 {
-			return encoding, reader, nil
+		if enc == NoBOM {
+			return NoBOM, reader, nil
 		}
 
 		// Make reader advance n bytes which n = len(BOM) to skip BOM.
-		buf = make([]byte, len(encoding.Data))
+		buf = make([]byte, len(enc.Bytes()))
 		_, err = reader.Read(buf)
 
-		return encoding, reader, err
+		return enc, reader, err
 	}
 
 	// No BOM detected.
-	return Encoding{"Unkown", []byte{}}, reader, nil
+	return NoBOM, reader, nil
 }
